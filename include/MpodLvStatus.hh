@@ -9,11 +9,11 @@
 class MpodLvStatus
 {
 public:
-  static bool       CratePowerIsOn( void );
-  static bool       IsOk( void );
+  static bool CratePowerIsOn();
+  static bool IsOk();
 
 private:
-  static std::string Execute( const std::string& command );
+  static std::string Execute(const std::string& command);
 };
 
 #endif

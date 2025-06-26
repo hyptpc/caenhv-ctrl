@@ -11,44 +11,48 @@
 class NcursesTUI
 {
 public:
-  static NcursesTUI& GetInstance( void );
-  ~NcursesTUI( void );
+  static NcursesTUI& GetInstance();
+  ~NcursesTUI();
 
 private:
-  NcursesTUI( void );
-  NcursesTUI( const NcursesTUI& );
-  NcursesTUI& operator=( const NcursesTUI& );
+  NcursesTUI();
+  NcursesTUI(const NcursesTUI&);
+  NcursesTUI& operator=(const NcursesTUI&);
 
 private:
-  enum ECommand { CMD_CATHODE,
-		  CMD_GEM,
-		  CMD_GATE };
+  enum ECommand {
+    CMD_CATHODE,
+    CMD_GEM,
+    CMD_GATE
+  };
   struct Command
   {
     ECommand    index;
     std::string label;
-    Command( ECommand i, std::string l )
-      : index( i ), label( l )
+    Command(ECommand i, std::string l)
+      : index(i), label(l)
     {}
-    void operator ()( bool s );
+    void operator ()(bool s);
   };
 
 private:
-  enum EColorPair { CP_DEFAULT,
-		    CP_RED,
-		    CP_GREEN,
-		    CP_YELLOW,
-		    CP_BLUE,
-		    CP_WHITE,
-		    CP_CURSOR,
-		    CP_TOPBAR,
-		    CP_RED_REV,
-		    CP_GREEN_REV,
-		    CP_YELLOW_REV,
-		    CP_BLUE_REV,
-		    CP_MAGENTA_REV,
-		    CP_WHITE_REV,
-		    NCOLORPAIR };
+  enum EColorPair {
+    CP_DEFAULT,
+    CP_RED,
+    CP_GREEN,
+    CP_YELLOW,
+    CP_BLUE,
+    CP_WHITE,
+    CP_CURSOR,
+    CP_TOPBAR,
+    CP_RED_REV,
+    CP_GREEN_REV,
+    CP_YELLOW_REV,
+    CP_BLUE_REV,
+    CP_MAGENTA_REV,
+    CP_WHITE_REV,
+    NCOLORPAIR
+  };
   bool                 m_lock;
   std::vector<Command> m_command_list;
   std::deque<bool>     m_status_list;
@@ -61,25 +65,25 @@ private:
   float                m_vgem; // [V]
 
 public:
-  void   Run( void );
+  void   Run();
 
 private:
-  void        Clear( void );
-  void        DrawChannelList( void );
-  void        DrawCommandList( void );
-  void        DrawDebug( void );
-  void        DrawKeyList( void );
-  void        DrawTopBar( void );
-  std::string GetChar( void );
-  void        GotoXY( int x, int y );
-  bool        Next( void );
-  int         Printf( const char* fmt, ... );
-  int         Puts( const std::string& str );
+  void        Clear();
+  void        DrawChannelList();
+  void        DrawCommandList();
+  void        DrawDebug();
+  void        DrawKeyList();
+  void        DrawTopBar();
+  std::string GetChar();
+  void        GotoXY(int x, int y);
+  bool        Next();
+  int         Printf(const char* fmt, ...);
+  int         Puts(const std::string& str);
 };
 
 //_____________________________________________________________________________
 inline NcursesTUI&
-NcursesTUI::GetInstance( void )
+NcursesTUI::GetInstance()
 {
   static NcursesTUI s_instance;
   return s_instance;
