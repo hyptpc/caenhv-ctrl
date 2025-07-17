@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <iomanip>
+#include <cstring>
 #include <iostream>
 #include <libgen.h>
 #include <sstream>
@@ -22,10 +23,10 @@ CaenControl::CaenControl()
     m_host_name("localhost"),
     m_user_name("admin"),
     m_password("admin"),
-    m_slot_number(0),
-    m_max_channel(6),
-    m_slot_list(nullptr),
-    m_channel_list(nullptr),
+    m_max_slot(2),
+    m_slot_number_cat(1),
+    m_slot_number_gem(0),
+    m_slot_list(),
     m_event(nullptr)
 {
 }
@@ -33,8 +34,10 @@ CaenControl::CaenControl()
 //_____________________________________________________________________________
 CaenControl::~CaenControl()
 {
-  if(m_channel_list)
-    delete m_channel_list;
+  /*
+  if(m_slot_list)
+    delete m_slot_list;
+  */
 }
 
 //_____________________________________________________________________________
@@ -77,17 +80,18 @@ CaenControl::GetBoardTemp() const
 }
 
 //_____________________________________________________________________________
-StrList
-CaenControl::GetChannelName() const
+//StrList
+std::vector<std::string>
+CaenControl::GetChannelName(int slot) const
 {
-  return m_event->channel_name;
+  return m_event->channel_name.at(slot);
 }
 
 //_____________________________________________________________________________
 float
-CaenControl::GetChannelParam(int ch, const std::string& key) const
+CaenControl::GetChannelParam(int slot, int ch, const std::string& key) const
 {
-  return m_event->channel_param[ch][key];
+  return m_event->channel_param[slot][ch][key];
 }
 
 //_____________________________________________________________________________
@@ -107,47 +111,51 @@ CaenControl::GetLinkTypeString() const
 
 //_____________________________________________________________________________
 StrList
-CaenControl::GetStatusString() const
+CaenControl::GetStatusString(int slot) const
 {
-  StrList status_list(m_max_channel);
-  for(int i=0; i<m_max_channel; ++i){
-    std::bitset<NCHANNELSTATUS> stbit((int)GetChannelParam(i, "Status"));
+  StrList status_list;
+  
+  int max_ch = m_slot_info.at(slot).max_channel;
+  status_list[slot].resize(max_ch);
+  for(int i=0; i<max_ch; ++i){
+    std::bitset<NCHANNELSTATUS> stbit((int)GetChannelParam(slot, i, "Status"));
     if(stbit.count() == 0){
       // status_list[i] = "PwOff";
       continue;
     }
-    if(stbit.test(CHSTATUS_POWER_ON) && (int)GetChannelParam(i, "Pw"))
-      status_list[i] = "  PwOn  ";
+    if(stbit.test(CHSTATUS_POWER_ON) && (int)GetChannelParam(slot, i, "Pw"))
+      status_list[slot][i] = "  PwOn  ";
     if(stbit.test(CHSTATUS_RAMP_UP))
-      status_list[i] = "   Up   ";
+      status_list[slot][i] = "   Up   ";
     if(stbit.test(CHSTATUS_RAMP_DOWN))
-      status_list[i] = "  Down  ";
+      status_list[slot][i] = "  Down  ";
     if(stbit.test(CHSTATUS_OVER_CURRENT))
-      status_list[i] = " OvCurr ";
+      status_list[slot][i] = " OvCurr ";
     if(stbit.test(CHSTATUS_OVER_VOLTAGE))
-      status_list[i] = " OvVolt ";
+      status_list[slot][i] = " OvVolt ";
     if(stbit.test(CHSTATUS_UNDER_VOLTAGE))
-      status_list[i] = " UnVolt ";
+      status_list[slot][i] = " UnVolt ";
     if(stbit.test(CHSTATUS_EXTERNAL_TRIP))
-      status_list[i] = " ExTrip ";
+      status_list[slot][i] = " ExTrip ";
     if(stbit.test(CHSTATUS_MAX_VOLTAGE))
-      status_list[i] = "  MaxV  ";
+      status_list[slot][i] = "  MaxV  ";
     if(stbit.test(CHSTATUS_EXTERNAL_DISABLE))
-      status_list[i] = " ExtDis ";
+      status_list[slot][i] = " ExtDis ";
     if(stbit.test(CHSTATUS_INTERNAL_TRIP))
-      status_list[i] = " InTrip ";
+      status_list[slot][i] = " InTrip ";
     if(stbit.test(CHSTATUS_UNPLUGGED))
-      status_list[i] = " Unplgd ";
+      status_list[slot][i] = " Unplgd ";
     if(stbit.test(CHSTATUS_RESERVED))
-      status_list[i] = "  Rsvd  ";
+      status_list[slot][i] = "  Rsvd  ";
     if(stbit.test(CHSTATUS_OVER_PROTECTION))
-      status_list[i] = " OvProt ";
+      status_list[slot][i] = " OvProt ";
     if(stbit.test(CHSTATUS_POWER_FAIL))
-      status_list[i] = " PwFail ";
+      status_list[slot][i] = " PwFail ";
     if(stbit.test(CHSTATUS_TEMP_ERROR))
-      status_list[i] = " TempEr ";
+      status_list[slot][i] = " TempEr ";
   }
   return status_list;
+
 }
 
 //_____________________________________________________________________________
@@ -172,6 +180,7 @@ CaenControl::GetSystemTypeString() const
   }
 }
 
+
 //_____________________________________________________________________________
 bool
 CaenControl::Initialize()
@@ -195,16 +204,39 @@ CaenControl::Initialize()
 	      << "   password    = " << m_password << std::endl;
     return false;
   } else {
-    m_slot_list = new unsigned short[1];
-    m_slot_list[0] = m_slot_number;
-    m_channel_list = new unsigned short[m_max_channel];
-    for(int i=0; i<m_max_channel; ++i)
-      m_channel_list[i] = i;
+
+    m_slot_list.push_back(m_slot_number_gem);
+    m_slot_list.push_back(m_slot_number_cat);
+    
+    unsigned short nSlots = 0;
+    unsigned short* nCh = nullptr;
+    char* modelList = nullptr;
+    char* descList = nullptr;
+    unsigned short* sn = nullptr;
+    unsigned char* fwMin = nullptr;
+    unsigned char* fwMax = nullptr;
+
+    ret = CAENHV_GetCrateMap(m_system_handle, &nSlots, &nCh, &modelList, &descList, &sn, &fwMin, &fwMax);
     m_event = new CaenEvent;
-    m_event->channel_param.resize(m_max_channel);
-    m_event->channel_name.resize(m_max_channel);
-    return true;
+    //std::vector<int> all_slots = {m_slot_number_cat, m_slot_number_gem};
+    std::vector<int> all_slots = {m_slot_number_gem, m_slot_number_cat};
+    
+    
+    for(int n : all_slots){
+      int n_channels = nCh[n];
+      SetMaxChannel(n, n_channels);
+      std::string model(&modelList[n * 8], 8);
+      std::string desc(&descList[n * 24], 24);
+      m_slot_info.at(n).modelName = model;
+      m_slot_info.at(n).description = desc;
+      for(int i=0;i<n_channels;i++){
+	m_slot_info.at(n).channel_list.push_back(i);
+      }
+      m_event->channel_param[n].resize(n_channels);
+      m_event->channel_name[n].resize(n_channels);
+    }
   }
+  return true;
 }
 
 //_____________________________________________________________________________
@@ -213,7 +245,7 @@ CaenControl::Initialize()
 // {
 //   unsigned short slot_list[] = { slot };
 //   const int m = max_channel;
-//   unsigned short channel_list[m_max_channel];
+//   unsigned short channel_list[m_max_channel_cat];
 //   for(int i=0; i<m; ++i) channel_list[i] = i;
 //   char ChName[m][MAX_CH_NAME];
 //   float V0Set[m];
@@ -248,19 +280,19 @@ CaenControl::Initialize()
 
 //_____________________________________________________________________________
 bool
-CaenControl::SetChannelParam(int ch, const std::string& key, float val)
+CaenControl::SetChannelParam(int slot, int ch, const std::string& key, float val)
 {
-  if(val == m_event->channel_param[ch][key])
+  if(val == m_event->channel_param[slot][ch][key])
     return true;
   unsigned short channel_list[] = { (unsigned short)ch };
   unsigned int uint_list[] = { (unsigned int)val };
   float float_list[] = { val };
   int ret = 0;
   if(key == "Pw" || key == "Status"){
-    ret = CAENHV_SetChParam(m_system_handle, m_slot_number, key.c_str(),
+    ret = CAENHV_SetChParam(m_system_handle, slot, key.c_str(),
 			    1, channel_list, uint_list);
   } else {
-    ret = CAENHV_SetChParam(m_system_handle, m_slot_number, key.c_str(),
+    ret = CAENHV_SetChParam(m_system_handle, slot, key.c_str(),
 			    1, channel_list, float_list);
   }
   if(ret == CAENHV_OK)
@@ -273,37 +305,53 @@ CaenControl::SetChannelParam(int ch, const std::string& key, float val)
 bool
 CaenControl::Update()
 {
-  // Board
-  CAENHV_GetBdParam(m_system_handle, m_slot_number, m_slot_list,
-		    "BdStatus", &m_event->board_status);
-  CAENHV_GetBdParam(m_system_handle, m_slot_number, m_slot_list,
-		    "Temp", &m_event->board_temp);
-  // Channel Name
-  char ChName[m_max_channel][MAX_CH_NAME];
-  CAENHV_GetChName(m_system_handle, m_slot_number, m_max_channel,
-		   m_channel_list, ChName);
-  for(int i=0; i<m_max_channel; ++i){
-    m_event->channel_name[i] = ChName[i];
-  }
-  // Channel Param
-  StrList float_chname = { "V0Set", "VMon", "I0Set", "IMon", "RUp", "RDWn" };
-  StrList uint_chname = { "Pw", "Status" };
-  for(const auto& n : float_chname){
-    float ChParam[m_max_channel];
-    CAENHV_GetChParam(m_system_handle, m_slot_number, n.c_str(),
-		      m_max_channel, m_channel_list, ChParam);
-    for(int i=0; i<m_max_channel; ++i){
-      m_event->channel_param[i][n] = ChParam[i];
+  StrList float_chname = {
+    {m_slot_number_cat,{ "V0Set", "VMon", "I0Set", "IMon", "RUp", "RDWn" }},
+    {m_slot_number_gem,{ "V0Set", "VMon", "I0Set", "IMon", "RUp", "RDWn" }}
+  };
+  StrList uint_chname = {
+    {m_slot_number_cat,{ "Pw", "Status" }},
+    {m_slot_number_gem,{ "Pw", "Status" }}
+  };
+  
+  for(int slot : m_slot_list){
+    // Board    
+    CAENHV_GetBdParam(m_system_handle, slot, m_slot_list.data(),
+		      "BdStatus", &m_event->board_status);
+    CAENHV_GetBdParam(m_system_handle, slot, m_slot_list.data(),
+		      "Temp", &m_event->board_temp);
+    
+    // Channel Name
+    //int maxch = m_slot_info[slot].max_channel;
+    int maxch = m_slot_info.at(slot).max_channel;
+    char ChName[maxch][MAX_CH_NAME];
+    CAENHV_GetChName(m_system_handle, slot, maxch, m_slot_info.at(slot).channel_list.data(), ChName);
+    for(int i=0; i<maxch; ++i){
+      m_event->channel_name[slot][i] = ChName[i];
     }
-  }
-  for(const auto& n : uint_chname){
-    unsigned int ChParam[m_max_channel];
-    CAENHV_GetChParam(m_system_handle, m_slot_number, n.c_str(),
-		      m_max_channel, m_channel_list, ChParam);
-    for(int i=0; i<m_max_channel; ++i){
-      m_event->channel_param[i][n] = (float)ChParam[i];
+    
+    // Channel Param
+    for(const auto& n : float_chname.at(slot)){
+      float ChParam[maxch];
+      CAENHV_GetChParam(m_system_handle, slot, n.c_str(),
+			maxch, m_slot_info.at(slot).channel_list.data(), ChParam);
+      
+      for(int i=0; i<maxch; ++i){
+	m_event->channel_param[slot][i][n] = ChParam[i];
+      }
     }
+    for(const auto& n : uint_chname.at(slot)){
+      unsigned int ChParam[maxch];
+      CAENHV_GetChParam(m_system_handle, slot, n.c_str(),
+			maxch, m_slot_info.at(slot).channel_list.data(), ChParam);
+      for(int i=0; i<maxch; ++i){
+	m_event->channel_param[slot][i][n] = (float)ChParam[i];
+      }
+    }
+    
   }
+  
+  
   return true;
 
 #if 0 // OLD

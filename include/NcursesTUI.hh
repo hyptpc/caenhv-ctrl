@@ -63,6 +63,8 @@ private:
   bool                 m_mpod_status;
   float                m_drift_field; // [V/cm]
   float                m_vgem; // [V]
+  float                m_vgate_plus_diff; // [V]
+  float                m_vgate_minus_diff; // [V]
 
 public:
   void   Run();

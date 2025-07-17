@@ -24,15 +24,20 @@ int NCh = 0;
 void
 NcursesTUI::Command::operator ()(bool s)
 {
+  int slot_cat = gCaen.GetSlotNumberCAT();
+  int slot_gem = gCaen.GetSlotNumberGEM();
+
   switch(index){
   case CMD_CATHODE:
+    gCaen.SetChannelParam(slot_cat, 0, "Pw", s);
     break;
   case CMD_GEM:
+    gCaen.SetChannelParam(slot_gem, 0, "Pw", s);
     break;
   case CMD_GATE:
-    gCaen.SetChannelParam(2, "Pw", s);
-    gCaen.SetChannelParam(3, "Pw", s);
-    gCaen.SetChannelParam(4, "Pw", s);
+    gCaen.SetChannelParam(slot_gem, 3, "Pw", s);
+    gCaen.SetChannelParam(slot_gem, 1, "Pw", s);
+    gCaen.SetChannelParam(slot_gem, 2, "Pw", s);
     break;
   default:
     break;
@@ -41,7 +46,7 @@ NcursesTUI::Command::operator ()(bool s)
 
 //_____________________________________________________________________________
 NcursesTUI::NcursesTUI()
-  : m_lock(true),
+  : m_lock(),
     m_command_list(),
     m_status_list(),
     m_cursor_x(0),
@@ -50,13 +55,22 @@ NcursesTUI::NcursesTUI()
     m_board_status(false),
     m_mpod_status(false),
     m_drift_field(),
-    m_vgem()
+    m_vgem(),
+    m_vgate_plus_diff(),
+    m_vgate_minus_diff()
 {
   m_command_list.push_back(Command(CMD_CATHODE, "Cathode"));
   m_command_list.push_back(Command(CMD_GEM,     "GEM    "));
   m_command_list.push_back(Command(CMD_GATE,    "Gate   "));
+  
   NCmd = m_command_list.size();
-  NCh = gCaen.GetMaxChannel();
+  int slot_cat = gCaen.GetSlotNumberCAT();
+  int slot_gem = gCaen.GetSlotNumberGEM();
+  for(int slot : gCaen.GetSlotList()){
+    const SlotInfo& info = gCaen.GetSlotInfo(slot);
+    int maxch = info.max_channel;
+    NCh += maxch;
+  }
   for(int i=0, n=m_command_list.size(); i<n; ++i){
     m_status_list.push_back(false);
   }
@@ -64,10 +78,10 @@ NcursesTUI::NcursesTUI()
   ::timeout(200); // [ms]
   ::cbreak();
   ::noecho();
-  // ::nodelay(stdscr, FALSE);
-  ::curs_set(FALSE);
+  //::nodelay(stdscr, FALSE);
+  ::curs_set(0);
   ::keypad(stdscr, TRUE);
-  // ::mousemask(ALL_MOUSE_EVENTS, nullptr);
+  //::mousemask(ALL_MOUSE_EVENTS, nullptr);
   if(::has_colors()){
     ::start_color();
     //           Index          Foreground    Background
@@ -91,14 +105,18 @@ NcursesTUI::NcursesTUI()
 	   );
   }
   gCaen.Update();
-  m_drift_field = (int)(gCaen.GetChannelParam(0, "V0Set") *
+  
+  m_drift_field = (int)(gCaen.GetChannelParam(slot_cat,0, "V0Set") *
 			cm / (Cathode - GemTop));
-  m_vgem = gCaen.GetChannelParam(1, "V0Set");
-  m_status_list[CMD_CATHODE] = (gCaen.GetChannelParam(0, "Pw") == 1);
-  m_status_list[CMD_GEM]     = (gCaen.GetChannelParam(1, "Pw") == 1);
-  m_status_list[CMD_GATE]    = (gCaen.GetChannelParam(2, "Pw") +
-				gCaen.GetChannelParam(3, "Pw") +
-				gCaen.GetChannelParam(4, "Pw") == 3);
+  m_vgem = gCaen.GetChannelParam(slot_gem, 0, "V0Set");
+  m_vgate_plus_diff = gCaen.GetChannelParam(slot_gem,0,"V0Set") - gCaen.GetChannelParam(slot_gem,2,"V0Set");
+  m_vgate_minus_diff = gCaen.GetChannelParam(slot_gem,3,"V0Set") - gCaen.GetChannelParam(slot_gem,0,"V0Set");
+  
+  m_status_list[CMD_CATHODE] = (gCaen.GetChannelParam(slot_cat,0, "Pw") == 1);
+  m_status_list[CMD_GEM]     = (gCaen.GetChannelParam(slot_gem,0, "Pw") == 1);
+  m_status_list[CMD_GATE]    = (gCaen.GetChannelParam(slot_gem,1, "Pw") +
+				gCaen.GetChannelParam(slot_gem,2, "Pw") +
+				gCaen.GetChannelParam(slot_gem,3, "Pw") == 3);
 }
 
 //_____________________________________________________________________________
@@ -122,55 +140,69 @@ NcursesTUI::Clear()
 void
 NcursesTUI::DrawChannelList()
 {
-  GotoXY(1, 5+NCmd);
-  auto color = COLOR_PAIR(CP_WHITE_REV);
-  ::attron(color);
-  // Printf("%s\n", std::string(80, '=').c_str());
-  // Puts(std::string(80, ' '));
-  Printf("Ch Name     V0Set    VMon     I0Set       IMon        RUp      RDWn     Status  ");
-  ::attroff(color);
-  auto ChannelName = gCaen.GetChannelName();
-  auto Status      = gCaen.GetStatusString();
-  for(int i=0, n=NCh; i<n; ++i){
-    int l = i+6+NCmd;
-    GotoXY(1, l);
-    Printf("%02d", i);
-    GotoXY(4, l);
-    Printf("%-7s", ChannelName[i].c_str());
-    GotoXY(13, l);
-    Printf("%5.0f V", gCaen.GetChannelParam(i, "V0Set"));
-    GotoXY(22, l);
-    Printf("%5.0f V", gCaen.GetChannelParam(i, "VMon"));
-    GotoXY(31, l);
-    if(!m_lock && i + NCmd == m_cursor_y)
-      color = COLOR_PAIR(CP_CURSOR);
-    else
-      color = COLOR_PAIR(CP_DEFAULT);
+  int line = 5+NCmd;
+  int real_line = NCmd;
+  for(int slot : gCaen.GetSlotList()){
+    const SlotInfo& info = gCaen.GetSlotInfo(slot);
+    int maxch = info.max_channel;
+    GotoXY(1,line);
+    auto color = COLOR_PAIR(CP_WHITE_REV);
     ::attron(color);
-    Printf("%7.2f uA", gCaen.GetChannelParam(i, "I0Set"));
+    Printf("Ch Name     V0Set    VMon     I0Set       IMon        RUp      RDWn     Status  ");
     ::attroff(color);
-    GotoXY(43, l);
-    Printf("%7.2f uA", gCaen.GetChannelParam(i, "IMon"));
-    GotoXY(55, l);
-    Printf("%3.0f V/s", gCaen.GetChannelParam(i, "RUp"));
-    GotoXY(64, l);
-    Printf("%3.0f V/s", gCaen.GetChannelParam(i, "RDWn"));
-    GotoXY(73, l);
-    if(Status[i].size() == 0)
-      color = COLOR_PAIR(CP_DEFAULT);
-    else if(Status[i].find("PwOn") != std::string::npos)
-      color = COLOR_PAIR(CP_RED_REV);
-    // else if(Status[i] == "PwOff")
-    // 	color = COLOR_PAIR(CP_BLUE_REV);
-    else if(Status[i].find("Up") != std::string::npos ||
-	    Status[i].find("Down") != std::string::npos)
-      color = COLOR_PAIR(CP_YELLOW_REV) | A_BLINK;
-    else
-      color = COLOR_PAIR(CP_YELLOW_REV) | A_BLINK;
-    color |= A_BOLD;
-    ::attron(color);
-    Printf("%-7s", Status[i].c_str());
-    ::attroff(color);
+    auto ChannelName = gCaen.GetChannelName(slot);
+    auto Status      = gCaen.GetStatusString(slot);
+    for(int i=0, n=maxch; i<n; ++i){
+      line++;
+      GotoXY(1, line);
+      Printf("%02d", i);
+      GotoXY(4, line);
+      Printf("%-7s", ChannelName[i].c_str());
+      GotoXY(13, line);
+      Printf("%5.0f V", gCaen.GetChannelParam(slot, i, "V0Set"));
+      GotoXY(22, line);
+      Printf("%5.0f V", gCaen.GetChannelParam(slot, i, "VMon"));
+      GotoXY(31, line);
+      //if(!m_lock && i + NCmd == m_cursor_y)
+      if(!m_lock && real_line == m_cursor_y)
+	color = COLOR_PAIR(CP_CURSOR);
+      else
+	color = COLOR_PAIR(CP_DEFAULT);
+      ::attron(color);
+      Printf("%7.2f uA", gCaen.GetChannelParam(slot, i, "I0Set"));
+      ::attroff(color);
+      GotoXY(43, line);
+      Printf("%7.2f uA", gCaen.GetChannelParam(slot, i, "IMon"));
+      GotoXY(55, line);
+      Printf("%3.0f V/s", gCaen.GetChannelParam(slot, i, "RUp"));
+      GotoXY(64, line);
+      Printf("%3.0f V/s", gCaen.GetChannelParam(slot, i, "RDWn"));
+      GotoXY(73, line);
+      
+      if (Status.count(slot) == 0 || i >= Status.at(slot).size()) {
+	color = COLOR_PAIR(CP_DEFAULT);
+      } else {
+	const std::string& state = Status.at(slot).at(i);
+	if (state.empty()) {
+	  color = COLOR_PAIR(CP_DEFAULT);
+	} else if (state.find("PwOn") != std::string::npos) {
+	  color = COLOR_PAIR(CP_RED_REV);
+	} else if (state.find("Up") != std::string::npos || state.find("Down") != std::string::npos) {
+	  color = COLOR_PAIR(CP_YELLOW_REV) | A_BLINK;
+	} else {
+	  color = COLOR_PAIR(CP_BLUE_REV);
+	}
+      }
+      color |= A_BOLD;
+      ::attron(color);
+      Printf("%-7s", Status[slot][i].c_str());
+      ::attroff(color);
+
+      real_line++;
+
+    }
+    real_line+=2;
+    line+=2;
   }
 }
 
@@ -210,7 +242,7 @@ NcursesTUI::DrawCommandList()
   Printf("%5.0f V/cm", m_drift_field);
   ::attroff(color);
   float vfield = m_drift_field*(Cathode - GemTop)/cm;
-  gCaen.SetChannelParam(0, "V0Set", vfield);
+  gCaen.SetChannelParam(gCaen.GetSlotNumberCAT(), 0, "V0Set", vfield);
   Printf(" -> %5.0f V", vfield);
   GotoXY(20, 5);
   Printf("VGEM=");
@@ -219,6 +251,22 @@ NcursesTUI::DrawCommandList()
   ::attron(color);
   Printf("%5.0f V   ", m_vgem);
   ::attroff(color);
+  GotoXY(20, 6);
+  Printf("VGATE+ =");
+  color = (!m_lock && 1 == m_cursor_x && 2 == m_cursor_y ?
+	   COLOR_PAIR(CP_WHITE_REV) : COLOR_PAIR(CP_DEFAULT));
+  ::attron(color);
+  Printf("%5.0f V   ", m_vgate_plus_diff);
+  ::attroff(color);
+
+  GotoXY(40, 6);
+  Printf("VGATE- =");
+  color = (!m_lock && 2 == m_cursor_x && 2 == m_cursor_y ?
+	   COLOR_PAIR(CP_WHITE_REV) : COLOR_PAIR(CP_DEFAULT));
+  ::attron(color);
+  Printf("%5.0f V   ", m_vgate_minus_diff);
+  ::attroff(color);
+
 }
 
 //_____________________________________________________________________________
@@ -226,19 +274,19 @@ void
 NcursesTUI::DrawDebug()
 {
   static int refresh = 0;
-  GotoXY(1, NCmd + NCh + 9);
+  GotoXY(1, NCmd + NCh + 10);
   ::attron(COLOR_PAIR(CP_MAGENTA_REV));
   Puts(std::string("DEBUG") + std::string(75, ' '));
   ::attroff(COLOR_PAIR(CP_MAGENTA_REV));
   Printf("Key=%3d %c", m_key, (m_key < 0) ? ' ' : m_key);
-  GotoXY(13, NCmd + NCh + 10);
+  GotoXY(13, NCmd + NCh + 11);
   Printf("Cursor=(%d, %d)   ", m_cursor_x, m_cursor_y);
   Printf("BdStatus=%d   ", m_board_status);
   Printf("MpodStatus=%d   ", m_mpod_status);
   Printf("Refresh=%8d\n", ++refresh);
   Printf("CmdFlag=(,  ,");
   for(int i=0; i<NCmd; ++i){
-    GotoXY(10 + i*3, NCmd + NCh + 11);
+    GotoXY(10 + i*3, NCmd + NCh + 12);
     Printf("%d", m_status_list[i]);
   }
   Printf(")  DriftField=%.3f\n", m_drift_field);
@@ -251,10 +299,13 @@ void
 NcursesTUI::DrawKeyList()
 {
   auto color = COLOR_PAIR(CP_DEFAULT);
-  GotoXY(1, NCmd + NCh + 7);
+  GotoXY(1, NCmd + NCh + 8);
   Printf("[q] Quit");
+  /*
   if(!m_board_status || !m_mpod_status)
     return;
+  */
+  //  GotoXY(1, NCmd + NCh + 9);
   Printf(" [l] Lock=");
   if(!m_lock)
     color = COLOR_PAIR(CP_YELLOW) | A_BOLD;
@@ -288,9 +339,18 @@ NcursesTUI::DrawTopBar()
   GotoXY(80 - s.str().size() + 1, 1);
   Puts(s.str());
   ::attroff(color);
-  GotoXY(1, 2);
-  Printf("SLOT#%d A1526 6Ch Neg. 15kV 1mA  Temp=%.0f°C",
-	 gCaen.GetBoardTemp(), gCaen.GetSlotNumber());
+  
+  int line = 2;
+  for(int slot : gCaen.GetSlotList()){
+    auto info = gCaen.GetSlotInfo();
+    GotoXY(1,line);
+    std::cout << "SLOT#" << std::setw(2) << slot << " "
+	      << std::left << std::setw(10) << info.at(slot).modelName
+	      << std::left << std::setw(24) << info.at(slot).description
+	      << "Temp=" << gCaen.GetBoardTemp() << "°C"<<std::endl;
+    line ++;
+  }
+  
   auto bdstatus = gCaen.GetBoardStatusString();
   GotoXY(61 - bdstatus.size(), 2);
   Printf("BdStatus=", bdstatus.c_str());
@@ -323,11 +383,22 @@ NcursesTUI::GetChar()
     x = 25;
     y =  5;
   }
+  // VGATE+
+  if(m_cursor_x == 1 && m_cursor_y == 2){
+    x = 25;
+    y =  6;
+  }
+  // VGATE-
+  if(m_cursor_x == 2 && m_cursor_y == 2){
+    x = 45;
+    y =  6;
+  }
   // I0Set
   if(m_cursor_y >= NCmd){
     x = 31;
     y = m_cursor_y + NCmd + 3;
   }
+  
   auto color = COLOR_PAIR(CP_WHITE_REV);
   ::attron(color);
   std::string input;
@@ -374,7 +445,7 @@ NcursesTUI::Next()
     break;
   case KEY_DOWN:
     if(!m_lock &&
-       m_cursor_y < NCmd + NCh - 1)
+       m_cursor_y < NCmd + NCh - 1 + 2)
       m_cursor_y++;
     break;
   case KEY_LEFT:
@@ -403,15 +474,48 @@ NcursesTUI::Next()
       if(!input.empty()){
 	long val = std::strtol(input.c_str(), nullptr, 10);
 	m_vgem = (float)val;
-	gCaen.SetChannelParam(1, "V0Set", m_vgem);
+	gCaen.SetChannelParam(gCaen.GetSlotNumberGEM(), 0, "V0Set", m_vgem);
+	gCaen.SetChannelParam(gCaen.GetSlotNumberGEM(), 1, "V0Set", m_vgem);
+	gCaen.SetChannelParam(gCaen.GetSlotNumberGEM(), 2, "V0Set", m_vgem);
+	gCaen.SetChannelParam(gCaen.GetSlotNumberGEM(), 3, "V0Set", m_vgem);
       }
     }
+
+    // VGATE+
+    if(m_cursor_x == 1 && m_cursor_y == 2){
+      auto input = GetChar();
+      if(!input.empty()){
+	long val = std::strtol(input.c_str(), nullptr, 10);
+	m_vgate_plus_diff = (float)val;
+	gCaen.SetChannelParam(gCaen.GetSlotNumberGEM(), 2, "V0Set", m_vgem - m_vgate_plus_diff);
+      }
+    }
+
+    // VGATE-
+    if(m_cursor_x == 2 && m_cursor_y == 2){
+      auto input = GetChar();
+      if(!input.empty()){
+	long val = std::strtol(input.c_str(), nullptr, 10);
+	m_vgate_minus_diff = (float)val;
+	gCaen.SetChannelParam(gCaen.GetSlotNumberGEM(), 3, "V0Set", m_vgem + m_vgate_minus_diff);
+      }
+    }
+
+    
+    
+    
     // I0Set
     if(NCmd <= m_cursor_y){
       auto input = GetChar();
       if(!input.empty()){
+	int slot_ch_gem = 12;
 	double val = std::strtod(input.c_str(), nullptr);
-	gCaen.SetChannelParam(m_cursor_y - NCmd, "I0Set", val);
+	if(m_cursor_y < slot_ch_gem + NCmd + 2)
+	  gCaen.SetChannelParam(gCaen.GetSlotNumberGEM(),m_cursor_y - NCmd, "I0Set", val); 
+	
+	else if(m_cursor_y >= slot_ch_gem + NCmd + 2)
+	  gCaen.SetChannelParam(gCaen.GetSlotNumberCAT(),m_cursor_y - NCmd - slot_ch_gem - 2, "I0Set", val);
+	
       }
     }
     break;
@@ -467,6 +571,8 @@ NcursesTUI::Run()
   while(Next() && gCaen.Update()){
     m_board_status = gCaen.GetBoardStatusString() == "OK";
     m_mpod_status = MpodLvStatus::IsOk();
+    //m_lock = false;
+    //m_lock = true;
     Clear();
     DrawTopBar();
     DrawCommandList();

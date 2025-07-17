@@ -9,8 +9,16 @@
 
 #include <CAENHVWrapper.h>
 
-typedef std::vector< std::map<std::string, float> > ChParam;
-typedef std::vector<std::string> StrList;
+typedef std::map<int, std::vector<std::map<std::string, float>>> ChParam;
+typedef std::map<int, std::vector<std::string>> StrList;
+
+struct SlotInfo {
+  int max_channel;
+  std::vector<unsigned short> channel_list;
+  std::string modelName;
+  std::string description;
+};
+
 
 class CaenControl
 {
@@ -53,16 +61,23 @@ private:
     CHSTATUS_TEMP_ERROR,
     NCHANNELSTATUS
   };
+
+  
+  
   int                  m_system_handle;
   CAENHV_SYSTEM_TYPE_t m_system_type;
   int                  m_link_type;
   std::string          m_host_name;
   std::string          m_user_name;
   std::string          m_password;
-  int                  m_slot_number;
-  int                  m_max_channel;
-  unsigned short*      m_slot_list;
-  unsigned short*      m_channel_list;
+  int                  m_max_slot;
+  std::map<int, SlotInfo> m_slot_info;
+  int                  m_slot_number_cat;
+  int                  m_slot_number_gem;
+  std::vector<ushort> m_slot_list;
+  
+  
+  
   // CAENHVEVENT_TYPE_t*  m_event;
   struct CaenEvent {
     unsigned int board_status;
@@ -77,27 +92,43 @@ public:
   unsigned int         GetBoardStatus() const;
   std::string          GetBoardStatusString() const;
   float                GetBoardTemp() const;
-  StrList              GetChannelName() const;
-  float                GetChannelParam(int ch, const std::string& key) const;
+  //StrList              GetChannelName(int slot) const;
+  std::vector<std::string> GetChannelName(int slot) const;
+  float                GetChannelParam(int slot, int ch, const std::string& key) const;
   const std::string&   GetHostName() const { return m_host_name; }
   int                  GetLinkType() const { return m_link_type; }
   std::string          GetLinkTypeString() const;
-  int                  GetMaxChannel() const { return m_max_channel; }
+  int                  GetMaxSlot() const {return m_max_slot; }
+  int                  GetMaxChannel(int slot) const {
+    auto it = m_slot_info.find(slot);
+    if(it != m_slot_info.end())return it->second.max_channel;
+    return 0;
+  }
   const std::string&   GetPassword() const { return m_password; }
-  int                  GetSlotNumber() const { return m_slot_number; }
-  StrList              GetStatusString() const;
+  int                  GetSlotNumberCAT() const { return m_slot_number_cat; }
+  int                  GetSlotNumberGEM() const { return m_slot_number_gem; }
+  const std::vector<ushort>& GetSlotList() const {return m_slot_list;}
+  const std::map<int, SlotInfo>& GetSlotInfo() const {return m_slot_info; }
+  const SlotInfo&      GetSlotInfo(int slot) const {
+    return m_slot_info.at(slot);
+  }
+  StrList              GetStatusString(int slot) const;
   CAENHV_SYSTEM_TYPE_t GetSystemType() const { return m_system_type; }
   std::string          GetSystemTypeString() const;
   const std::string&   GetUserName() const { return m_user_name; }
   bool                 Initialize();
   // void                 Print(unsigned short slot, int max_channel);
-  bool                 SetChannelParam(int ch, const std::string& key,
+  bool                 SetChannelParam(int slot, int ch, const std::string& key,
 				       float val);
   void                 SetHostName(const std::string& h){ m_host_name = h; }
   void                 SetLinkType(int l){ m_link_type = l; }
-  void                 SetMaxChannel(int m){ m_max_channel = m; }
+  void                 SetMaxSlot(int slot){ m_max_slot = slot; }
+  void                 SetMaxChannel(int slot, int m){
+    m_slot_info[slot].max_channel = m;
+  }
   void                 SetPassword(const std::string& p){ m_password = p; }
-  void                 SetSlotNumber(int s){ m_slot_number = s; }
+  void                 SetSlotNumberCAT(int s){ m_slot_number_cat = s; }
+  void                 SetSlotNumberGEM(int s){ m_slot_number_gem = s; }
   void                 SetSystemType(CAENHV_SYSTEM_TYPE_t s){ m_system_type = s; }
   void                 SetUserName(const std::string& u){ m_user_name = u; }
   bool                 Update();

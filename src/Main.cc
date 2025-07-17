@@ -1,5 +1,6 @@
 // -*- C++ -*-
 
+#include <iostream>
 #include "CaenControl.hh"
 #include "NcursesTUI.hh"
 
@@ -13,8 +14,10 @@ main(int argc, char* argv[])
   gCaen.SetHostName("192.168.20.58");
   gCaen.SetUserName("admin");
   gCaen.SetPassword("admin");
-  gCaen.SetSlotNumber(1);
-  gCaen.SetMaxChannel(6);
+  
+  gCaen.SetSlotNumberCAT(1);
+  gCaen.SetSlotNumberGEM(0);
+  
   if(!gCaen.Initialize())
     return EXIT_FAILURE;
 
