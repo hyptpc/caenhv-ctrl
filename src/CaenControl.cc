@@ -24,7 +24,7 @@ CaenControl::CaenControl()
     m_user_name("admin"),
     m_password("admin"),
     m_max_slot(2),
-    m_slot_number_cat(1),
+    m_slot_number_cat(2),
     m_slot_number_gem(0),
     m_slot_list(),
     m_event(nullptr)
@@ -223,7 +223,9 @@ CaenControl::Initialize()
     
     
     for(int n : all_slots){
-      int n_channels = nCh[n];
+      int n_channels;
+      if(n == 0)n_channels=4;
+      else{n_channels=nCh[n];}
       SetMaxChannel(n, n_channels);
       std::string model(&modelList[n * 8], 8);
       std::string desc(&descList[n * 24], 24);

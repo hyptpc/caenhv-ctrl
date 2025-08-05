@@ -62,6 +62,8 @@ private:
   bool                 m_board_status;
   bool                 m_mpod_status;
   float                m_drift_field; // [V/cm]
+  float                m_vcat; // [V]
+  float                m_vfield; // [V]
   float                m_vgem; // [V]
   float                m_vgate_plus_diff; // [V]
   float                m_vgate_minus_diff; // [V]

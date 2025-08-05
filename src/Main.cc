@@ -15,7 +15,7 @@ main(int argc, char* argv[])
   gCaen.SetUserName("admin");
   gCaen.SetPassword("admin");
   
-  gCaen.SetSlotNumberCAT(1);
+  gCaen.SetSlotNumberCAT(2);
   gCaen.SetSlotNumberGEM(0);
   
   if(!gCaen.Initialize())
