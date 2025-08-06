@@ -7,7 +7,9 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <fstream>
 #include <tuple>
+#include <chrono>
 
 #include "CaenControl.hh"
 #include "MpodLvStatus.hh"
@@ -47,6 +49,7 @@ NcursesTUI::Command::operator ()(bool s)
 //_____________________________________________________________________________
 NcursesTUI::NcursesTUI()
   : m_lock(),
+    m_catlock(),
     m_command_list(),
     m_status_list(),
     m_cursor_x(0),
@@ -313,11 +316,7 @@ NcursesTUI::DrawKeyList()
   auto color = COLOR_PAIR(CP_DEFAULT);
   GotoXY(1, NCmd + NCh + 8);
   Printf("[q] Quit");
-  /*
-  if(!m_board_status || !m_mpod_status)
-    return;
-  */
-  //  GotoXY(1, NCmd + NCh + 9);
+
   Printf(" [l] Lock=");
   if(!m_lock)
     color = COLOR_PAIR(CP_YELLOW) | A_BOLD;
@@ -326,6 +325,16 @@ NcursesTUI::DrawKeyList()
   ::attron(color);
   Printf("%s", (m_lock ? "ON" : "OFF"));
   ::attroff(color);
+  
+  Printf(" [c] Cathode Lock=");
+  if(!m_catlock)
+    color = COLOR_PAIR(CP_YELLOW) | A_BOLD;
+  else
+    color = COLOR_PAIR(CP_DEFAULT);
+  ::attron(color);
+  Printf("%s", (m_catlock ? "ON" : "OFF"));
+  ::attroff(color);
+  
 }
 
 //_____________________________________________________________________________
@@ -352,22 +361,6 @@ NcursesTUI::DrawTopBar()
   Puts(s.str());
   ::attroff(color);
   
-  int line = 2;
-  
-  for(int slot : gCaen.GetSlotList()){
-    auto info = gCaen.GetSlotInfo();
-    GotoXY(1,line);
-    
-    std::cout << "SLOT#" << std::setw(2) << slot << " "
-	      << std::left << std::setw(10) << info.at(slot).modelName
-	      << std::left << std::setw(24) << info.at(slot).description
-	      << "Temp=" << gCaen.GetBoardTemp() << "°C"<<std::endl;
-    
-    line ++;
-  }
-  
-  
-  
   auto bdstatus = gCaen.GetBoardStatusString();
   GotoXY(61 - bdstatus.size(), 2);
   Printf("BdStatus=", bdstatus.c_str());
@@ -383,6 +376,24 @@ NcursesTUI::DrawTopBar()
   ::attron(color);
   Printf("%s", m_mpod_status ? "OK" : "OFF");
   ::attroff(color);
+
+  /*
+  int line = 2;
+  for(int slot : gCaen.GetSlotList()){
+    auto info = gCaen.GetSlotInfo(slot);
+    GotoXY(1,line);
+
+    std::cout << "SLOT#" << std::setw(2) << slot << " "
+	      << std::left << std::setw(10) << info.modelName
+	      << std::left << std::setw(24) << info.description
+	      << "Temp=" << gCaen.GetBoardTemp() << "°C"<<std::endl;
+    
+
+    line ++;
+  }
+  */
+
+
 }
 
 //_____________________________________________________________________________
@@ -461,6 +472,8 @@ NcursesTUI::Next()
   case 'l':
     m_lock = !m_lock;
     break;
+  case 'c':
+    m_catlock = !m_catlock;
   case KEY_UP:
     if(!m_lock && m_cursor_y > 0)
       m_cursor_y--;
@@ -510,12 +523,17 @@ NcursesTUI::Next()
       if(!input.empty()){
 	long val = std::strtol(input.c_str(), nullptr, 10);
 	m_vgem = (float)val;
+
 	gCaen.SetChannelParam(gCaen.GetSlotNumberGEM(), 0, "V0Set", m_vgem);
 	gCaen.SetChannelParam(gCaen.GetSlotNumberGEM(), 1, "V0Set", m_vgem);
 	gCaen.SetChannelParam(gCaen.GetSlotNumberGEM(), 2, "V0Set", m_vgem - m_vgate_plus_diff);
 	gCaen.SetChannelParam(gCaen.GetSlotNumberGEM(), 3, "V0Set", m_vgem + m_vgate_minus_diff);
-	m_vcat = m_vfield + m_vgem;
-	gCaen.SetChannelParam(gCaen.GetSlotNumberCAT(), 0, "V0Set",m_vcat);
+	
+	if(!m_catlock){
+	  m_vcat = m_vfield + m_vgem;
+	  //m_vcat = m_vfield;
+	  gCaen.SetChannelParam(gCaen.GetSlotNumberCAT(), 0, "V0Set",m_vcat);
+	}
       }
     }
 
@@ -525,6 +543,8 @@ NcursesTUI::Next()
       if(!input.empty()){
 	long val = std::strtol(input.c_str(), nullptr, 10);
 	m_vgate_plus_diff = (float)val;
+
+	if(m_vgem < m_vgate_plus_diff)m_vgate_plus_diff = m_vgem;
 	gCaen.SetChannelParam(gCaen.GetSlotNumberGEM(), 2, "V0Set", m_vgem - m_vgate_plus_diff);
       }
     }
@@ -535,6 +555,7 @@ NcursesTUI::Next()
       if(!input.empty()){
 	long val = std::strtol(input.c_str(), nullptr, 10);
 	m_vgate_minus_diff = (float)val;
+   
 	gCaen.SetChannelParam(gCaen.GetSlotNumberGEM(), 3, "V0Set", m_vgem + m_vgate_minus_diff);
       }
     }
@@ -548,7 +569,6 @@ NcursesTUI::Next()
       if(!input.empty()){
 	const SlotInfo& info = gCaen.GetSlotInfo(gCaen.GetSlotNumberGEM());
 	int slot_ch_gem = info.max_channel;
-	//int slot_ch_gem = 12;
 	double val = std::strtod(input.c_str(), nullptr);
 	if(m_cursor_y < slot_ch_gem + NCmd + 2)
 	  gCaen.SetChannelParam(gCaen.GetSlotNumberGEM(),m_cursor_y - NCmd, "I0Set", val); 
@@ -565,8 +585,62 @@ NcursesTUI::Next()
     break;
   }
   m_lock |= !m_board_status | !m_mpod_status;
+  m_catlock |= !m_board_status | !m_mpod_status;
+  
   return TRUE;
 }
+
+void NcursesTUI::SaveFile()
+{
+  std::ofstream ofs("caenhv-hyptpc.txt", std::ios::app); 
+  if (!ofs.is_open()) {
+    std::cerr<<"Cannot Open the File"<<std::endl;
+    return;
+  }
+
+  double VCatSet  = gCaen.GetChannelParam(gCaen.GetSlotNumberCAT(), 0, "V0Set");
+  double VCATMon  = gCaen.GetChannelParam(gCaen.GetSlotNumberCAT(), 0, "VMon");
+  double ICatMon  = gCaen.GetChannelParam(gCaen.GetSlotNumberCAT(), 0, "IMon");
+  
+  double VGEMSet  = gCaen.GetChannelParam(gCaen.GetSlotNumberGEM(), 0, "V0Set");
+  double VGEMMon  = gCaen.GetChannelParam(gCaen.GetSlotNumberGEM(), 0, "VMon");
+  double IGEMMon  = gCaen.GetChannelParam(gCaen.GetSlotNumberGEM(), 0, "IMon");
+
+  double VG0Set  = gCaen.GetChannelParam(gCaen.GetSlotNumberGEM(), 1, "V0Set");
+  double VG0Mon  = gCaen.GetChannelParam(gCaen.GetSlotNumberGEM(), 1, "VMon");
+  double IG0Mon  = gCaen.GetChannelParam(gCaen.GetSlotNumberGEM(), 1, "IMon");
+
+  double VGPSet  = gCaen.GetChannelParam(gCaen.GetSlotNumberGEM(), 2, "V0Set");
+  double VGPMon  = gCaen.GetChannelParam(gCaen.GetSlotNumberGEM(), 2, "VMon");
+  double IGPMon  = gCaen.GetChannelParam(gCaen.GetSlotNumberGEM(), 2, "IMon");
+
+  double VGMSet  = gCaen.GetChannelParam(gCaen.GetSlotNumberGEM(), 3, "V0Set");
+  double VGMMon  = gCaen.GetChannelParam(gCaen.GetSlotNumberGEM(), 3, "VMon");
+  double IGMMon  = gCaen.GetChannelParam(gCaen.GetSlotNumberGEM(), 3, "IMon");
+
+
+  
+
+  ofs << std::fixed << std::setprecision(2)
+      << VCatSet << " "
+      << VCATMon << " "
+      << ICatMon << " "
+      << VGEMSet << " "
+      << VGEMMon << " "
+      << IGEMMon << " "
+      << VG0Set << " "
+      << VG0Mon << " "
+      << IG0Mon << " "
+      << VGPSet << " "
+      << VGPMon << " "
+      << IGPMon << " "
+      << VGMSet << " "
+      << VGMMon << " "
+      << IGMMon << std::endl;
+    
+  ofs.close();
+}
+
 
 //_____________________________________________________________________________
 int
@@ -608,7 +682,15 @@ NcursesTUI::Puts(const std::string& str)
 void
 NcursesTUI::Run()
 {
+  using clock = std::chrono::steady_clock;
+  auto last_save = clock::now();
+  
   while(Next() && gCaen.Update()){
+    auto now = clock::now();
+    if (std::chrono::duration_cast<std::chrono::seconds>(now - last_save).count() >= 1) {
+      SaveFile();
+      last_save = now;
+    }
     m_board_status = gCaen.GetBoardStatusString() == "OK";
     m_mpod_status = MpodLvStatus::IsOk();
     Clear();

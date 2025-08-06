@@ -205,8 +205,11 @@ CaenControl::Initialize()
     return false;
   } else {
 
+
     m_slot_list.push_back(m_slot_number_gem);
     m_slot_list.push_back(m_slot_number_cat);
+    
+    
     
     unsigned short nSlots = 0;
     unsigned short* nCh = nullptr;
@@ -218,24 +221,28 @@ CaenControl::Initialize()
 
     ret = CAENHV_GetCrateMap(m_system_handle, &nSlots, &nCh, &modelList, &descList, &sn, &fwMin, &fwMax);
     m_event = new CaenEvent;
-    //std::vector<int> all_slots = {m_slot_number_cat, m_slot_number_gem};
+
     std::vector<int> all_slots = {m_slot_number_gem, m_slot_number_cat};
-    
-    
+
+    int list_count = 0;
     for(int n : all_slots){
       int n_channels;
-      if(n == 0)n_channels=4;
+      if(n == m_slot_number_gem)n_channels=4;
       else{n_channels=nCh[n];}
       SetMaxChannel(n, n_channels);
-      std::string model(&modelList[n * 8], 8);
-      std::string desc(&descList[n * 24], 24);
+      std::string model(&modelList[n * 4], 8);
+      std::string desc(&descList[n * 12], 24);
+      //std::string model(&modelList[list_count * 8], 8);
+      //std::string desc(&descList[list_count * 24], 24);
       m_slot_info.at(n).modelName = model;
       m_slot_info.at(n).description = desc;
+      
       for(int i=0;i<n_channels;i++){
 	m_slot_info.at(n).channel_list.push_back(i);
       }
       m_event->channel_param[n].resize(n_channels);
       m_event->channel_name[n].resize(n_channels);
+      list_count++;
     }
   }
   return true;

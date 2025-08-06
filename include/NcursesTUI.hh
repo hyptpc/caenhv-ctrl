@@ -54,6 +54,7 @@ private:
     NCOLORPAIR
   };
   bool                 m_lock;
+  bool                 m_catlock;
   std::vector<Command> m_command_list;
   std::deque<bool>     m_status_list;
   int                  m_cursor_x;
@@ -81,6 +82,7 @@ private:
   std::string GetChar();
   void        GotoXY(int x, int y);
   bool        Next();
+  void        SaveFile();
   int         Printf(const char* fmt, ...);
   int         Puts(const std::string& str);
 };
