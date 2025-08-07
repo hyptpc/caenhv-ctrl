@@ -592,12 +592,14 @@ NcursesTUI::Next()
 
 void NcursesTUI::SaveFile()
 {
-  std::ofstream ofs("caenhv-hyptpc.txt", std::ios::app); 
+  std::ofstream ofs("/home/oper/share/monitor-tmp/caenhv-hyptpc.txt", std::ios::app); 
   if (!ofs.is_open()) {
     std::cerr<<"Cannot Open the File"<<std::endl;
     return;
   }
 
+  std::time_t unix_time = std::time(nullptr);
+ 
   double VCatSet  = gCaen.GetChannelParam(gCaen.GetSlotNumberCAT(), 0, "V0Set");
   double VCATMon  = gCaen.GetChannelParam(gCaen.GetSlotNumberCAT(), 0, "VMon");
   double ICatMon  = gCaen.GetChannelParam(gCaen.GetSlotNumberCAT(), 0, "IMon");
@@ -622,6 +624,7 @@ void NcursesTUI::SaveFile()
   
 
   ofs << std::fixed << std::setprecision(2)
+      << unix_time << " "
       << VCatSet << " "
       << VCATMon << " "
       << ICatMon << " "
